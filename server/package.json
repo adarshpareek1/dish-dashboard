@@ -1,0 +1,21 @@
+{
+  "name": "nosh-dish-server",
+  "version": "1.0.0",
+  "description": "Backend API for Dish Dashboard with Optimistic Concurrency Control",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "seed": "node src/seed/seed.js"
+  },
+  "keywords": ["mern", "optimistic-concurrency-control", "dish-dashboard"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "mongoose": "^8.9.5"
+  }
+}

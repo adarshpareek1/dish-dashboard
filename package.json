@@ -1,0 +1,22 @@
+{
+  "name": "nosh-assignment-dish-dashboard",
+  "version": "1.0.0",
+  "description": "Dish Dashboard: Draft Editing and Safe Updates with Optimistic Concurrency Control",
+  "private": true,
+  "scripts": {
+    "install:all": "npm install --prefix server && npm install --prefix client",
+    "seed": "npm run seed --prefix server",
+    "server": "npm run dev --prefix server",
+    "client": "npm run dev --prefix client",
+    "start": "node server/server.js"
+  },
+  "keywords": [
+    "mern",
+    "optimistic-concurrency-control",
+    "atomic-updates",
+    "draft-editing",
+    "nosh"
+  ],
+  "author": "",
+  "license": "ISC"
+}

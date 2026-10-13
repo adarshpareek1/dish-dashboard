@@ -1,0 +1,251 @@
+# Nosh — Full Stack Dish Dashboard
+> **Dish Dashboard: Draft Editing and Safe Updates with Optimistic Concurrency Control (OCC)**
+
+---
+
+## 1. Project Overview & Architecture
+
+This project is a dish-management dashboard developed as part of the Nosh Full Stack Technical Assignment. It provides safe concurrent updates, local draft state isolation, and backend validation.
+
+### Architecture Highlights
+- **Frontend (Vite + React):** Component-isolated draft state machines. Local edits remain as drafts in browser memory until explicitly saved or discarded.
+- **Backend (Node.js + Express):** RESTful endpoints enforcing HTTP/HTTPS image URL validation and trimmed non-empty dish name requirements.
+- **Database (MongoDB + Mongoose):** Persistent storage using document versioning (`version: Number`) and single-document atomic compare-and-swap operations (`findOneAndUpdate`).
+- **Optional Bonus Included:** Automatic background polling every 5 seconds that checks for external updates. If a dish has active unsaved local drafts, the user's edits are safely preserved and a notification banner indicates newer server data is available.
+
+---
+
+## 2. Prerequisites
+
+- **Node.js:** v18.0.0 or higher (Tested on Node v22.16.0)
+- **npm:** v9.0.0 or higher (Tested on npm 10.9.2)
+- **MongoDB:** Locally installed MongoDB running on `mongodb://127.0.0.1:27017` or a MongoDB Atlas URI.
+
+---
+
+## 3. Setup, Run & Seed Commands
+
+### Quick Monorepo Setup
+
+```bash
+# 1. Clone repository
+git clone <YOUR_REPO_URL>
+cd NOSH_assignment
+
+# 2. Install all dependencies for both backend and frontend
+npm run install:all
+```
+
+### Seeding the Database
+The seed script loads `seedData.json` into MongoDB using MongoDB's `$setOnInsert` operator. **Rerunning this command is completely idempotent: it never creates duplicates and never overwrites user edits or modified versions.**
+
+```bash
+# Run seed command from root
+npm run seed
+
+# Alternatively, from server directory:
+cd server
+npm run seed
+```
+
+### Running the Application
+
+In two separate terminals:
+
+**Terminal 1 — Backend (Port 5000):**
+```bash
+cd server
+npm run dev
+# Starts server at http://localhost:5000
+```
+
+**Terminal 2 — Frontend (Port 5173):**
+```bash
+cd client
+npm run dev
+# Starts dashboard UI at http://localhost:5173
+```
+
+---
+
+## 4. Environment Variables
+
+Create a `.env` file in the `server/` directory (a template is provided at `server/.env.example`):
+
+```env
+PORT=5000
+MONGO_URI=mongodb://127.0.0.1:27017/nosh_dishes
+```
+
+---
+
+## 5. API Reference & Examples
+
+### 1. Retrieve All Dishes
+* **Endpoint:** `GET /dishes` (or `GET /api/dishes`)
+* **Description:** Returns all dishes, including current published status and version.
+
+**Example Request (curl):**
+```bash
+curl -X GET http://localhost:5000/dishes
+```
+
+**Example Response (200 OK):**
+```json
+[
+  {
+    "dishId": "1",
+    "dishName": "Jeera Rice",
+    "imageUrl": "https://nosh-assignment.s3.ap-south-1.amazonaws.com/jeera-rice.jpg",
+    "isPublished": true,
+    "version": 1
+  }
+]
+```
+
+---
+
+### 2. Update Dish with Optimistic Concurrency Control
+* **Endpoint:** `PATCH /dishes/:dishId` (or `PATCH /api/dishes/:dishId`)
+* **Description:** Atomically verifies `expectedVersion` against stored version and updates `dishName` and `isPublished`.
+
+**Example Valid Request (curl):**
+```bash
+curl -X PATCH http://localhost:5000/dishes/1 \
+  -H "Content-Type: application/json" \
+  -d '{"dishName": "Jeera Rice Supreme", "isPublished": true, "expectedVersion": 1}'
+```
+
+**Response (200 OK):**
+```json
+{
+  "dishId": "1",
+  "dishName": "Jeera Rice Supreme",
+  "imageUrl": "https://nosh-assignment.s3.ap-south-1.amazonaws.com/jeera-rice.jpg",
+  "isPublished": true,
+  "version": 2
+}
+```
+
+---
+
+### 3. Concurrency Conflict (Stale Version)
+If the database version has advanced (e.g., now at `2`), sending `expectedVersion: 1` returns `409 Conflict` and does **not** modify stored data:
+
+```bash
+curl -i -X PATCH http://localhost:5000/dishes/1 \
+  -H "Content-Type: application/json" \
+  -d '{"dishName": "Stale Edit", "isPublished": true, "expectedVersion": 1}'
+```
+
+**Response (409 Conflict):**
+```json
+{
+  "error": "Conflict: This dish was modified by another session. Current version is 2, but you sent version 1.",
+  "currentDish": {
+    "dishId": "1",
+    "dishName": "Jeera Rice Supreme",
+    "imageUrl": "https://nosh-assignment.s3.ap-south-1.amazonaws.com/jeera-rice.jpg",
+    "isPublished": true,
+    "version": 2
+  }
+}
+```
+
+---
+
+### 4. Validation Rejection (Empty Name on Published Dish)
+```bash
+curl -i -X PATCH http://localhost:5000/dishes/1 \
+  -H "Content-Type: application/json" \
+  -d '{"dishName": "   ", "isPublished": true, "expectedVersion": 2}'
+```
+
+**Response (400 Bad Request):**
+```json
+{
+  "error": "A published dish must have a non-empty name after trimming."
+}
+```
+
+---
+
+## 6. Required Acceptance Checks & Verification Steps
+
+All required criteria have been verified using automated scripts and UI browser tests:
+
+### Check 1: Idempotent Seeding & Persistence Across Restart
+1. Run `npm run seed`. 5 dishes are inserted with `version: 1`.
+2. Edit Dish 1 name to `"Jeera Rice Deluxe"` and save (advances to `version: 2`).
+3. Re-run `npm run seed`.
+   * **Verification:** Console outputs `Newly Inserted: 0, Preserved intact: 5`. Dish 1 retains `"Jeera Rice Deluxe"` and `version: 2`.
+4. Stop the backend server (`Ctrl + C`) and restart it.
+   * **Verification:** `GET /dishes` confirms Dish 1 retains `"Jeera Rice Deluxe"` and `version: 2`.
+
+### Check 2: Local Draft Editing & Discard Behavior
+1. In the dashboard UI, edit the name input for Dish 2 (`Paneer Tikka`) to `"Paneer Tikka Spicy"`.
+2. Notice the **"Unsaved Edits"** and **"Drafting Changes"** badges immediately appear.
+3. Click **Discard**.
+   * **Verification:** Input field immediately reverts to `"Paneer Tikka"`, buttons disable, and no network request is sent to the server.
+
+### Check 3: Publication Validation (Empty Name & Image URL)
+1. In the UI, clear the name of a published dish to empty spaces (`"   "`), keep Publish checked, and click **Save Changes**.
+   * **Verification:** UI displays a red error banner (`A published dish must have a non-empty name after trimming`), and the local draft input is preserved for correction.
+2. **Image URL Validation Check:**
+   Run the following curl command with a malformed image URL protocol:
+   ```bash
+   curl -i -X PATCH http://localhost:5000/dishes/2 \
+     -H "Content-Type: application/json" \
+     -d '{"dishName": "Paneer Tikka", "imageUrl": "ftp://invalid-url.com/paneer.jpg", "isPublished": true, "expectedVersion": 1}'
+   ```
+   * **Verification:** Returns HTTP `400 Bad Request` with `A published dish must have a valid HTTP or HTTPS image URL. Received: 'ftp://invalid-url.com/paneer.jpg'`.
+
+### Check 4: Multi-Tab Concurrency (409 Conflict Flow)
+1. Open `http://localhost:5173` in **Tab A** and **Tab B**.
+2. In **Tab A**, edit Dish 3 name to `"Rabdi Kesar Special"` and click **Save Changes**.
+   * Tab A increments Dish 3 to `version: 2`.
+3. In **Tab B**, without refreshing, edit Dish 3 to `"Rabdi Malai Draft"` and click **Save Changes**.
+   * Tab B sends `expectedVersion: 1`.
+   * **Verification:**
+     * The backend returns HTTP `409 Conflict`.
+     * Tab B displays the warning banner: `⚠️ 409 Conflict Detected: This dish was modified by another session. Current version is 2, but you sent version 1.`
+     * Tab B's draft text (`"Rabdi Malai Draft"`) is **strictly preserved**.
+     * Tab B displays a **🔄 Reload Server Version** button.
+     * Clicking Reload prompts a warning confirmation modal: `⚠️ Warning: Reloading will discard your current draft edits. Proceed?`.
+     * Upon confirmation, the card synchronizes to `"Rabdi Kesar Special"` at `v2`.
+
+### Check 5: Server Failure / Network Disconnection Simulation
+1. Stop the backend server terminal.
+2. In the browser, make an edit to any dish and click **Save Changes**.
+   * **Verification:** The request fails gracefully; the UI shows a connection error banner, the local draft remains intact in the input box, and the user can click Save again once the server is back online.
+
+---
+
+## 7. Key Design Decision
+
+### Optimistic Concurrency Control (OCC) vs. Pessimistic Locking
+* **Why OCC was chosen:** Pessimistic locking acquires a database lock when a user starts editing. In a web dashboard, this is hazardous: if a user opens a dish, gets distracted, or closes their laptop lid, that record remains locked for all other team members.
+* **Implementation:** We used document-level version numbers and MongoDB's atomic `Dish.findOneAndUpdate({ dishId, version: expectedVersion }, { $set: ..., $inc: { version: 1 } })`. Because MongoDB executes document modifications atomically, race conditions under high concurrency are prevented without requiring distributed locks or database-level table locks.
+
+---
+
+## 8. Optional Bonus: Real-time External Updates & Polling
+
+- **Implementation:** React `useEffect` hook running background polling at **5-second intervals** (`POLL_INTERVAL_MS = 5000`).
+- **Draft Preservation Rule:** If a dish has active unsaved local edits (`isDirty === true`), background polling **never overwrites** the user's input. Instead, a visual notice informs the user: *"⚡ Newer Server Data Available (vX): Another user saved changes. Your local draft is preserved below."*
+- **Cleanup & Connection Handling:** The polling interval is assigned to a `useRef` and cleanly cleared in the `useEffect` unmount teardown function to prevent memory leaks. If the backend is temporarily disconnected, background polling fails silently in the console without interrupting the user's active form editing.
+
+---
+
+## 9. Known Limitations
+
+1. **Static Polling Interval:** Uses a fixed 5-second polling interval. In a high-traffic production application with thousands of active dishes, WebSockets or Server-Sent Events (SSE) would reduce server query load.
+2. **Schema Scope:** Authentication, user roles, dish creation, and image uploads are intentionally excluded per assignment scope boundaries.
+
+---
+
+## 10. Submission Metadata & Disclosure
+
+- **Approximate Time Spent:** ~3.5 hours.
+- **Optional Bonus Implemented:** Yes (Background auto-sync polling every 5 seconds with draft preservation and timer teardown).
+- **AI & Tools Disclosure:** Built using Cursor/Antigravity AI pair programming assistant for rapid scaffolding, test simulation, and documentation verification. All architecture, concurrency logic, and draft state machines were verified against project requirements.
