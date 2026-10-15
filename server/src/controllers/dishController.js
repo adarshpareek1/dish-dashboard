@@ -77,10 +77,16 @@ export const updateDish = async (req, res) => {
       });
     }
 
-    // 3. Validate dishName type
+    // 3. Validate dishName type and non-empty content
     if (dishName === undefined || typeof dishName !== 'string') {
       return res.status(400).json({
         error: "dishName is required and must be a string."
+      });
+    }
+
+    if (dishName.trim() === '') {
+      return res.status(400).json({
+        error: "Dish name cannot be empty."
       });
     }
 
@@ -148,6 +154,9 @@ export const updateDish = async (req, res) => {
     // 10. Success: return updated dish with new incremented version
     return res.status(200).json(updatedDish);
   } catch (error) {
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ error: error.message });
+    }
     console.error('[Error updateDish]:', error);
     return res.status(500).json({ error: 'Unexpected server error while updating dish.' });
   }
