@@ -59,8 +59,10 @@ export function DishCard({ dish, onDishUpdated, onRefreshNeeded }) {
         expectedVersion: loadedVersion
       });
 
-      // On success: update saved dish, increment version, clear unsaved indicator
+      // On success: update saved dish, sync draft state, increment version, clear unsaved indicator
       onDishUpdated(updated);
+      setDraftName(updated.dishName);
+      setDraftIsPublished(updated.isPublished);
       setLoadedVersion(updated.version);
       setSaveError(null);
       setConflictError(null);
