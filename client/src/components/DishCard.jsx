@@ -119,10 +119,10 @@ export function DishCard({ dish, onDishUpdated, onRefreshNeeded }) {
         </div>
 
         <div className="card-badges">
-          {draftIsPublished ? (
+          {dish.isPublished ? (
             <StatusBadge type="published" label="Published" />
           ) : (
-            <StatusBadge type="unpublished" label="Draft Status" />
+            <StatusBadge type="unpublished" label="Unpublished" />
           )}
           {isDirty && <StatusBadge type="unsaved" label="Unsaved Edits" />}
         </div>
