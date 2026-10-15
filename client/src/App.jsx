@@ -87,8 +87,8 @@ export function App() {
               </div>
             ))}
           </div>
-        ) : dishes.length === 0 ? (
-          /* Empty State */
+        ) : fetchError ? null : dishes.length === 0 ? (
+          /* Empty State (only shown when server responded with empty list) */
           <div className="empty-state">
             <span className="empty-icon">🍽️</span>
             <h3>No Dishes Found</h3>
