@@ -29,15 +29,21 @@ This project is a dish-management dashboard developed as part of the Nosh Full S
 
 ```bash
 # 1. Clone repository
-git clone <YOUR_REPO_URL>
-cd NOSH_assignment
+git clone https://github.com/adarshpareek1/dish-dashboard.git
+cd dish-dashboard
 
-# 2. Install all dependencies for both backend and frontend
+# 2. Copy environment file (no migrations needed: MongoDB unique index on dishId is created automatically on start)
+cp server/.env.example server/.env
+# On Windows PowerShell: copy server/.env.example server/.env
+
+# 3. Install all dependencies for both backend and frontend
 npm run install:all
 ```
 
+> **Note on Database Migrations:** No migrations needed. MongoDB is schemaless, and Mongoose automatically registers the unique index on `dishId` upon connection.
+
 ### Seeding the Database
-The seed script loads `seedData.json` into MongoDB using MongoDB's `$setOnInsert` operator. **Rerunning this command is completely idempotent: it never creates duplicates and never overwrites user edits or modified versions.**
+The seed script loads `server/seedData.json` into MongoDB using MongoDB's `$setOnInsert` operator. **Rerunning this command is completely idempotent: it never creates duplicates and never overwrites user edits or modified versions.**
 
 ```bash
 # Run seed command from root
@@ -66,12 +72,26 @@ npm run dev
 # Starts dashboard UI at http://localhost:5173
 ```
 
+### Automated Verification Script
+Run the automated verification suite to test all status codes (200, 400, 404, 409) and test parallel concurrent writes:
+```bash
+# Cross-platform (Node.js):
+node scripts/verify.js
+
+# Or via Bash / Git Bash:
+bash scripts/verify.sh
+```
+
 ---
 
 ## 4. Environment Variables
 
-Create a `.env` file in the `server/` directory (a template is provided at `server/.env.example`):
+Create a `.env` file in the `server/` directory:
+```bash
+cp server/.env.example server/.env
+```
 
+Default configuration:
 ```env
 PORT=5000
 MONGO_URI=mongodb://127.0.0.1:27017/nosh_dishes
@@ -189,16 +209,30 @@ All required criteria have been verified using automated scripts and UI browser 
    * **Verification:** Input field immediately reverts to `"Paneer Tikka"`, buttons disable, and no network request is sent to the server.
 
 ### Check 3: Publication Validation (Empty Name & Image URL)
-1. In the UI, clear the name of a published dish to empty spaces (`"   "`), keep Publish checked, and click **Save Changes**.
-   * **Verification:** UI displays a red error banner (`A published dish must have a non-empty name after trimming`), and the local draft input is preserved for correction.
-2. **Image URL Validation Check:**
-   Run the following curl command with a malformed image URL protocol:
-   ```bash
-   curl -i -X PATCH http://localhost:5000/dishes/2 \
-     -H "Content-Type: application/json" \
-     -d '{"dishName": "Paneer Tikka", "imageUrl": "ftp://invalid-url.com/paneer.jpg", "isPublished": true, "expectedVersion": 1}'
-   ```
-   * **Verification:** Returns HTTP `400 Bad Request` with `A published dish must have a valid HTTP or HTTPS image URL. Received: 'ftp://invalid-url.com/paneer.jpg'`.
+1. **Empty Name Rejection:**
+   In the UI, clear the name of a dish to empty spaces (`"   "`), keep Publish checked, and click **Save Changes**.
+   * **Verification:** UI displays a red error banner (`Dish name cannot be empty.`), and the local draft input is preserved for correction.
+2. **Invalid Image URL Validation (Verified via Database Test Data):**
+   The backend enforces that any published dish must have a valid HTTP/HTTPS image URL stored in the database.
+   To verify this constraint using test data:
+   * In `mongosh` (or MongoDB Compass):
+     ```javascript
+     use nosh_dishes;
+     db.dishes.updateOne({ dishId: "5" }, { $set: { imageUrl: "not-a-valid-url", isPublished: false } });
+     ```
+   * Attempt to publish dish 5 via PATCH:
+     ```bash
+     curl -i -X PATCH http://localhost:5000/dishes/5 \
+       -H "Content-Type: application/json" \
+       -d '{"dishName": "Alfredo Pasta", "isPublished": true, "expectedVersion": 1}'
+     ```
+   * **Verification:** The backend rejects the request with HTTP `400 Bad Request`:
+     ```json
+     {
+       "error": "A published dish must have a valid HTTP or HTTPS image URL. Stored URL: 'not-a-valid-url'"
+     }
+     ```
+   * The database record remains unmodified (`isPublished: false`).
 
 ### Check 4: Multi-Tab Concurrency (409 Conflict Flow)
 1. Open `http://localhost:5173` in **Tab A** and **Tab B**.
@@ -244,4 +278,4 @@ All required criteria have been verified using automated scripts and UI browser 
 
 - **Approximate Time Spent:** ~2.5 hours.
 - **Optional Bonus Implemented:** No (Excluded per guidelines to ensure a lean, rock-solid core submission).
-- **AI & Tools Disclosure:** Built using Antigravity AI for scaffolding, test simulation, and documentation verification. All architecture, concurrency logic, and draft state machines were verified against project requirements.
+- **Code Reuse & AI Disclosure:** No external code was copied. Antigravity AI was used for scaffolding, test simulation, and documentation verification. All architecture design, concurrency logic, atomic compare-and-swap operations, validation rules, and draft state machines were authored, reviewed, and verified manually.
