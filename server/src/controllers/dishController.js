@@ -57,7 +57,7 @@ export const getDishById = async (req, res) => {
 export const updateDish = async (req, res) => {
   try {
     const { dishId } = req.params;
-    const { dishName, isPublished, expectedVersion, imageUrl } = req.body;
+    const { dishName, isPublished, expectedVersion } = req.body;
 
     // 1. Validate identifier
     if (!dishId || typeof dishId !== 'string' || dishId.trim() === '') {
@@ -97,39 +97,26 @@ export const updateDish = async (req, res) => {
       });
     }
 
-    // 5. Check if dish exists first to provide accurate 404 and inspect current imageUrl if not provided
+    // 5. Check if dish exists first to provide accurate 404
     const existingDish = await Dish.findOne({ dishId });
     if (!existingDish) {
       return res.status(404).json({ error: `Dish with ID '${dishId}' not found.` });
     }
 
-    // Target image URL is either newly provided or existing stored imageUrl
-    const targetImageUrl = imageUrl !== undefined ? String(imageUrl).trim() : existingDish.imageUrl;
-
-    // 6. Publication validation rules
+    // 6. Publication validation rules: validate using the imageUrl stored in the database
     if (isPublished === true) {
-      const trimmedName = dishName.trim();
-      if (trimmedName.length === 0) {
+      if (!isValidHttpUrl(existingDish.imageUrl)) {
         return res.status(400).json({
-          error: "A published dish must have a non-empty name after trimming."
-        });
-      }
-
-      if (!isValidHttpUrl(targetImageUrl)) {
-        return res.status(400).json({
-          error: `A published dish must have a valid HTTP or HTTPS image URL. Received: '${targetImageUrl}'`
+          error: `A published dish must have a valid HTTP or HTTPS image URL. Stored URL: '${existingDish.imageUrl}'`
         });
       }
     }
 
-    // 7. Prepare update payload
+    // 7. Prepare update payload (accepts only dishName and isPublished)
     const updatePayload = {
       dishName: dishName.trim(),
       isPublished: isPublished
     };
-    if (imageUrl !== undefined) {
-      updatePayload.imageUrl = targetImageUrl;
-    }
 
     // 8. Atomic compare-and-swap on { dishId, version: expectedVersion }
     // Only updates if version in database EXACTLY matches expectedVersion
