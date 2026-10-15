@@ -244,4 +244,4 @@ All required criteria have been verified using automated scripts and UI browser 
 
 - **Approximate Time Spent:** ~2.5 hours.
 - **Optional Bonus Implemented:** No (Excluded per guidelines to ensure a lean, rock-solid core submission).
-- **AI & Tools Disclosure:** Built using Cursor/Antigravity AI pair programming assistant for rapid scaffolding, test simulation, and documentation verification. All architecture, concurrency logic, and draft state machines were verified against project requirements.
+- **AI & Tools Disclosure:** Built using Antigravity AI for scaffolding, test simulation, and documentation verification. All architecture, concurrency logic, and draft state machines were verified against project requirements.
