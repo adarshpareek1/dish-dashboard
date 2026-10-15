@@ -129,9 +129,12 @@ export const updateDish = async (req, res) => {
       { new: true, runValidators: true }
     );
 
-    // 9. If updatedDish is null, a concurrent update changed the version in the database!
+    // 9. If updatedDish is null, check whether dish was deleted (404) or version changed (409)
     if (!updatedDish) {
       const currentDish = await Dish.findOne({ dishId });
+      if (!currentDish) {
+        return res.status(404).json({ error: `Dish with ID '${dishId}' not found.` });
+      }
       return res.status(409).json({
         error: `Conflict: This dish was modified by another session. Current version is ${currentDish.version}, but you sent version ${expectedVersion}.`,
         currentDish: currentDish
