@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { getDishes } from './api/dishApi';
 import { DishCard } from './components/DishCard';
 import { Navbar } from './components/Navbar';
@@ -8,71 +8,34 @@ export function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [fetchError, setFetchError] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filter, setFilter] = useState('all');
-
-  // Ref to track polling timer for clean teardown on unmount
-  const pollTimerRef = useRef(null);
 
   // Load dishes from backend
-  const loadDishes = useCallback(async (isSilent = false) => {
-    if (!isSilent) setIsRefreshing(true);
+  const loadDishes = useCallback(async () => {
+    setIsRefreshing(true);
     try {
       const data = await getDishes();
       setDishes(data);
       setFetchError(null);
     } catch (err) {
-      console.warn('[Auto-Sync / Fetch Notice]: Backend unreachable or returned error:', err.message);
-      // Only set blocking error on initial load failure
-      if (!isSilent) {
-        setFetchError('Unable to connect to backend server. Make sure MongoDB and backend are running.');
-      }
+      console.error('[Fetch Error]:', err.message);
+      setFetchError('Unable to connect to backend server. Make sure MongoDB and backend are running.');
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
   }, []);
 
-  // Initial fetch on mount
+  // Initial fetch on component mount
   useEffect(() => {
-    loadDishes(false);
+    loadDishes();
   }, [loadDishes]);
 
-  // Bonus: Auto-sync polling every 5 seconds with graceful cleanup
-  useEffect(() => {
-    const POLL_INTERVAL_MS = 5000;
-
-    pollTimerRef.current = setInterval(() => {
-      // Perform silent background refresh so UI doesn't flicker
-      loadDishes(true);
-    }, POLL_INTERVAL_MS);
-
-    // Teardown timer when component unmounts
-    return () => {
-      if (pollTimerRef.current) {
-        clearInterval(pollTimerRef.current);
-      }
-    };
-  }, [loadDishes]);
-
-  // Update a single dish in state after successful save or reload
+  // Update single dish in state after save or reload
   const handleDishUpdated = (updatedDish) => {
     setDishes((prev) =>
       prev.map((d) => (d.dishId === updatedDish.dishId ? updatedDish : d))
     );
   };
-
-  // Filter and search
-  const filteredDishes = dishes.filter((dish) => {
-    const matchesSearch = dish.dishName
-      .toLowerCase()
-      .includes(searchTerm.toLowerCase());
-    if (!matchesSearch) return false;
-
-    if (filter === 'published') return dish.isPublished === true;
-    if (filter === 'unpublished') return dish.isPublished === false;
-    return true;
-  });
 
   const publishedCount = dishes.filter((d) => d.isPublished).length;
 
@@ -81,21 +44,17 @@ export function App() {
       <Navbar
         totalDishes={dishes.length}
         publishedCount={publishedCount}
-        onRefresh={() => loadDishes(false)}
+        onRefresh={loadDishes}
         isRefreshing={isRefreshing}
-        searchTerm={searchTerm}
-        setSearchTerm={setSearchTerm}
-        filter={filter}
-        setFilter={setFilter}
       />
 
       <main className="main-content">
-        {/* Architecture explanation badge for reviewer */}
+        {/* Architecture Information Banner */}
         <div className="info-banner">
-          <div className="info-badge">Architecture Highlights</div>
+          <div className="info-badge">Core Architecture</div>
           <p>
-            Each dish card maintains an <strong>isolated local draft</strong>. Edits are never persisted until you explicitly click <strong>Save</strong>. 
-            The backend enforces <strong>Optimistic Concurrency Control (OCC)</strong> using atomic version checks to guarantee conflict protection under simultaneous edits.
+            Edits remain as <strong>local drafts</strong> until you explicitly click <strong>Save Changes</strong>. 
+            The backend verifies the document <strong>version</strong> atomically to prevent conflicting updates across concurrent sessions.
           </p>
         </div>
 
@@ -109,7 +68,7 @@ export function App() {
               <button
                 type="button"
                 className="btn btn-primary btn-retry"
-                onClick={() => loadDishes(false)}
+                onClick={loadDishes}
               >
                 Retry Connection
               </button>
@@ -128,38 +87,29 @@ export function App() {
               </div>
             ))}
           </div>
-        ) : filteredDishes.length === 0 ? (
+        ) : dishes.length === 0 ? (
           /* Empty State */
           <div className="empty-state">
             <span className="empty-icon">🍽️</span>
             <h3>No Dishes Found</h3>
-            <p>
-              {searchTerm || filter !== 'all'
-                ? 'No dishes match your active search or filter criteria.'
-                : 'No dishes found in database. Run "npm run seed" in server directory to populate.'}
-            </p>
-            {(searchTerm || filter !== 'all') && (
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => {
-                  setSearchTerm('');
-                  setFilter('all');
-                }}
-              >
-                Clear Filters
-              </button>
-            )}
+            <p>No dishes found in database. Run "npm run seed" in the server directory to populate initial data.</p>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={loadDishes}
+            >
+              Refresh Data
+            </button>
           </div>
         ) : (
-          /* Dishes Grid */
+          /* Dish Cards Grid */
           <div className="dishes-grid">
-            {filteredDishes.map((dish) => (
+            {dishes.map((dish) => (
               <DishCard
                 key={dish.dishId}
                 dish={dish}
                 onDishUpdated={handleDishUpdated}
-                onRefreshNeeded={() => loadDishes(false)}
+                onRefreshNeeded={loadDishes}
               />
             ))}
           </div>

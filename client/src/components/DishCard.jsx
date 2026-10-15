@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { StatusBadge } from './StatusBadge';
 import { patchDish } from '../api/dishApi';
 
-// Fallback SVG placeholder for broken dish images
+// Fallback SVG placeholder for broken dish images (Required)
 const FALLBACK_IMAGE = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
 <svg xmlns="http://www.w3.org/2000/svg" width="400" height="260" viewBox="0 0 400 260" fill="none">
   <rect width="400" height="260" fill="#f1f5f9"/>
@@ -16,11 +16,11 @@ const FALLBACK_IMAGE = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
 `);
 
 export function DishCard({ dish, onDishUpdated, onRefreshNeeded }) {
-  // Local draft states
+  // Local draft states - edits remain local until Save is clicked
   const [draftName, setDraftName] = useState(dish.dishName);
   const [draftIsPublished, setDraftIsPublished] = useState(dish.isPublished);
-  
-  // Track the version this draft was originally based on
+
+  // Version this draft was originally based on
   const [loadedVersion, setLoadedVersion] = useState(dish.version);
 
   // Interaction and error states
@@ -28,18 +28,12 @@ export function DishCard({ dish, onDishUpdated, onRefreshNeeded }) {
   const [saveError, setSaveError] = useState(null);
   const [conflictError, setConflictError] = useState(null);
   const [imgSrc, setImgSrc] = useState(dish.imageUrl);
-  const [showReloadConfirm, setShowReloadConfirm] = useState(false);
 
-  // Detect whether user has unsaved modifications
+  // Clearly distinguish unsaved changes from saved values
   const isDirty =
     draftName !== dish.dishName || draftIsPublished !== dish.isPublished;
 
-  // Detect if server has a newer version than when this draft was started
-  const isServerNewer = dish.version > loadedVersion;
-
-  // When parent dish prop updates (e.g. from polling or external save):
-  // If user has NO unsaved draft, update local state automatically.
-  // If user HAS unsaved draft, PRESERVE IT and indicate newer data available.
+  // Sync state if dish prop changes and user has no active unsaved edits
   useEffect(() => {
     if (!isDirty) {
       setDraftName(dish.dishName);
@@ -51,30 +45,28 @@ export function DishCard({ dish, onDishUpdated, onRefreshNeeded }) {
     }
   }, [dish.dishName, dish.isPublished, dish.version, dish.imageUrl, isDirty]);
 
-  // Handle Save
+  // Handle Save: sends draft with originally loaded version
   const handleSave = async (e) => {
     e.preventDefault();
     setIsSaving(true);
     setSaveError(null);
     setConflictError(null);
-    setShowReloadConfirm(false);
 
     try {
-      // Send draft with the version it was originally loaded with
       const updated = await patchDish(dish.dishId, {
         dishName: draftName,
         isPublished: draftIsPublished,
         expectedVersion: loadedVersion
       });
 
-      // Save succeeded: update parent and local version
+      // On success: update saved dish, increment version, clear unsaved indicator
       onDishUpdated(updated);
       setLoadedVersion(updated.version);
       setSaveError(null);
       setConflictError(null);
     } catch (err) {
       if (err.status === 409) {
-        // 409 Conflict: preserve draft and explain external update
+        // 409 Conflict: preserve draft and explain another update occurred
         setConflictError({
           message:
             err.message ||
@@ -82,9 +74,9 @@ export function DishCard({ dish, onDishUpdated, onRefreshNeeded }) {
           serverDish: err.data?.currentDish
         });
       } else {
-        // 400 Validation or 500 / Network Error: preserve draft and show message
+        // 400 Validation or Network/Server Error: preserve draft and show error
         setSaveError(
-          err.message || 'Failed to save changes. Please check your input and retry.'
+          err.message || 'Failed to save changes. Please check input and retry.'
         );
       }
     } finally {
@@ -92,17 +84,16 @@ export function DishCard({ dish, onDishUpdated, onRefreshNeeded }) {
     }
   };
 
-  // Handle Discard: restore pristine server values
+  // Handle Discard: restore last loaded values
   const handleDiscard = () => {
     setDraftName(dish.dishName);
     setDraftIsPublished(dish.isPublished);
     setLoadedVersion(dish.version);
     setSaveError(null);
     setConflictError(null);
-    setShowReloadConfirm(false);
   };
 
-  // Handle Reload Server Version (explicit user action after conflict)
+  // Handle Reload: reload latest server data with explicit discard of local draft
   const handleReloadServer = () => {
     if (conflictError?.serverDish) {
       onDishUpdated(conflictError.serverDish);
@@ -110,20 +101,15 @@ export function DishCard({ dish, onDishUpdated, onRefreshNeeded }) {
       setDraftIsPublished(conflictError.serverDish.isPublished);
       setLoadedVersion(conflictError.serverDish.version);
     } else {
-      // Fallback: trigger parent refresh
       onRefreshNeeded();
-      setDraftName(dish.dishName);
-      setDraftIsPublished(dish.isPublished);
-      setLoadedVersion(dish.version);
     }
     setSaveError(null);
     setConflictError(null);
-    setShowReloadConfirm(false);
   };
 
   return (
     <div className={`dish-card ${isDirty ? 'card-dirty' : ''} ${conflictError ? 'card-conflict' : ''}`}>
-      {/* Top Banner for Unsaved Drafts */}
+      {/* Card Header: Identifier, Version, and Badges */}
       <div className="card-header">
         <div className="card-id-group">
           <span className="dish-id">ID: {dish.dishId}</span>
@@ -153,15 +139,7 @@ export function DishCard({ dish, onDishUpdated, onRefreshNeeded }) {
         )}
       </div>
 
-      {/* External Update Notice (Bonus requirement) */}
-      {isDirty && isServerNewer && !conflictError && (
-        <div className="banner banner-warning">
-          <strong>⚡ Newer Server Data Available (v{dish.version}):</strong>
-          <span> Another user saved changes. Your local draft is preserved below. Discard or Save to reconcile.</span>
-        </div>
-      )}
-
-      {/* 409 Conflict Banner */}
+      {/* 409 Conflict Banner: explains external update and warns that reload discards draft */}
       {conflictError && (
         <div className="banner banner-conflict">
           <div className="banner-title">
@@ -171,44 +149,25 @@ export function DishCard({ dish, onDishUpdated, onRefreshNeeded }) {
             {conflictError.message}
           </p>
           <p className="banner-subtext">
-            Your draft changes are preserved below so you don’t lose work.
+            Your draft changes are preserved below.
           </p>
 
-          {!showReloadConfirm ? (
+          <div className="confirm-box">
+            <span className="confirm-warning">
+              ⚠️ Warning: Reloading will discard your current local draft.
+            </span>
             <button
               type="button"
               className="btn btn-warning-action"
-              onClick={() => setShowReloadConfirm(true)}
+              onClick={handleReloadServer}
             >
-              🔄 Reload Server Version
+              🔄 Discard Draft & Reload Latest
             </button>
-          ) : (
-            <div className="confirm-box">
-              <span className="confirm-warning">
-                ⚠️ Warning: Reloading will discard your current draft edits. Proceed?
-              </span>
-              <div className="confirm-buttons">
-                <button
-                  type="button"
-                  className="btn btn-danger-sm"
-                  onClick={handleReloadServer}
-                >
-                  Yes, Discard Draft & Reload
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary-sm"
-                  onClick={() => setShowReloadConfirm(false)}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
+          </div>
         </div>
       )}
 
-      {/* General / Validation Error Banner */}
+      {/* Validation or Server Error Banner: preserves draft */}
       {saveError && (
         <div className="banner banner-error">
           <strong>❌ Save Failed:</strong> {saveError}
